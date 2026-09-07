@@ -19,6 +19,10 @@
 * Manually download the four exact v1.0 RData files named in `docs/datasets/TEP.md` from the DOI landing page into `data/raw/tep/`, then run `py -m ml.ingestion.ingest_tep` and `py -m ml.eda.tep_eda`. This will create the TEP Parquet, manifest, figures, and computed summary.
 * Phase 1 is **not complete** until those TEP steps run successfully and are verified.
 
+### Repository handoff
+
+* Current scaffold, AI4I pipeline/docs/EDA assets, and this progress record were published to the project GitHub `main` branch on 2026-09-07. Raw datasets and Parquet files remain local by design; the tracked AI4I manifest records source provenance.
+
 ## 2026-09-07
 
 ### Completed this session
