@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "processing_timestamp_utc": "2026-09-07T08:06:21.591378+00:00",
+  "script": "ml.ingestion.ingest_ai4i",
+  "source_files": [
+    {
+      "name": "ai4i2020.csv",
+      "sha256": "dc6630cd9b1f0f853922fad78a1b6436570d3f1ec863f1dd5c4340ac56bc8a8e",
+      "bytes": 522048
+    }
+  ],
+  "row_count": 10000,
+  "columns": [
+    "udi",
+    "product_id",
+    "type",
+    "air_temperature_k",
+    "process_temperature_k",
+    "rotational_speed_rpm",
+    "torque_nm",
+    "tool_wear_min",
+    "machine_failure",
+    "twf",
+    "hdf",
+    "pwf",
+    "osf",
+    "rnf"
+  ],
+  "transformations": "Schema validation and lossless column-name normalization only; no rows are imputed, dropped, sampled, or synthetically generated."
+}
