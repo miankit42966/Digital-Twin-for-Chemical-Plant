@@ -4,14 +4,14 @@ An academic, local-first digital-twin platform for chemical-process safety monit
 
 ## Status and data honesty
 
-This repository is at **Phase 0 (environment setup)**. The running interface deliberately uses a **synthetic integration baseline**, not plant telemetry, TEP data, or ML inference. Its purpose is to prove the frontend/backend connection and the scene interaction before Phases 1–4 introduce audited datasets and trained models. Do not use its values as safety advice or model results.
+The project is at **Phase 1 (dataset sourcing, ingestion & EDA)**. The interactive dashboard uses a clearly labeled **synthetic integration baseline**—not plant telemetry, TEP replay data, or ML inference. AI4I 2020 ingestion and EDA have been run on the official UCI file. TEP acquisition remains blocked by Harvard Dataverse access in this environment; see the progress log. No values in the UI are safety advice or model results.
 
 ## Architecture
 
 ```text
 React + TypeScript + Three.js scene  <-- REST / WebSocket -->  FastAPI
                                                             |
-                                              dataset adapters / model registry (planned)
+                                      dataset adapters / model registry (planned)
 ```
 
 ## Run locally
@@ -31,14 +31,22 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Visit the URL printed by Vite (normally `http://localhost:5173`). The backend API documentation is at `http://localhost:8000/docs`.
+Visit the URL printed by Vite (normally `http://localhost:5173`). API documentation is at `http://localhost:8000/docs`.
 
-## Planned sources and limits
+## Data pipeline
 
-* Tennessee Eastman Process (TEP) will be the process/fault source after acquisition and schema verification.
-* AI4I 2020 will be the predictive-maintenance source after acquisition and schema verification.
-* No model has been trained and there are no evaluation metrics yet.
-* Safety thresholds in the baseline are visual demonstration values only; they are not operating limits.
+```powershell
+py -m pip install -r ml\requirements.txt
+py -m ml.ingestion.fetch_ai4i
+py -m ml.ingestion.ingest_ai4i
+py -m ml.eda.ai4i_eda
+```
 
-See [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Raw datasets and large Parquet files are intentionally not committed. The processed AI4I manifest and generated EDA assets are tracked for provenance. See [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md), [docs/datasets/AI4I.md](docs/datasets/AI4I.md), and [docs/datasets/TEP.md](docs/datasets/TEP.md).
+
+## Limits
+
+* No ML model has been trained and there are no evaluation metrics.
+* Demonstration risk thresholds are not operating limits.
+* TEP is a simulation; AI4I is synthetic-but-realistic industrial data.
 
