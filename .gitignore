@@ -14,5 +14,6 @@ frontend/vite.config.d.ts
 .DS_Store
 data/raw/
 data/processed/**/*.parquet
+data/processed/tep/**/replay.json
 models/*.joblib
 .remote-inspect/

@@ -7,7 +7,7 @@ import shutil
 import urllib.request
 from pathlib import Path
 
-from ml.ingestion.common import REPO_ROOT, sha256
+from ml.ingestion.common import REPO_ROOT, atomic_output, sha256
 
 DESTINATION = REPO_ROOT / "data" / "raw" / "tep"
 FILES = {
@@ -43,12 +43,13 @@ def main() -> None:
         url = f"https://dataverse.harvard.edu/api/access/datafile/{file_id}"
         print(f"Downloading {name} from Dataverse file ID {file_id}")
         request = urllib.request.Request(url, headers={"User-Agent": "SentinelTwin-Academic-Data-Ingestion/0.1 (contact: local-project)"})
-        with urllib.request.urlopen(request) as response, target.open("wb") as output:
-            shutil.copyfileobj(response, output, length=1024 * 1024)
-        # Dataverse exposes MD5 in v1.0 metadata; verify it before accepting raw data.
-        md5 = md5sum(target)
-        if md5 != expected_md5:
-            raise RuntimeError(f"Checksum mismatch for {name}: expected {expected_md5}, got {md5}")
+        with atomic_output(target) as temporary:
+            with urllib.request.urlopen(request, timeout=120) as response, temporary.open("wb") as output:
+                shutil.copyfileobj(response, output, length=1024 * 1024)
+            # Verify before publishing, never destroy a good file on interruption.
+            md5 = md5sum(temporary)
+            if md5 != expected_md5:
+                raise RuntimeError(f"Checksum mismatch for {name}: expected {expected_md5}, got {md5}")
         print(f"Saved unchanged: {name} (sha256={sha256(target)})")
 
 

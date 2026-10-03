@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import matplotlib
+
+# EDA is designed to run from a terminal/CI machine; no desktop Tk runtime is required.
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import seaborn as sns
 
 from ml.ingestion.common import REPO_ROOT
@@ -14,27 +21,71 @@ SUMMARY = REPO_ROOT / "docs" / "eda" / "TEP_summary.md"
 def main() -> None:
     if not INPUT.exists():
         raise FileNotFoundError(f"Missing {INPUT}; run ingestion first.")
-    frame = pd.read_parquet(INPUT)
     ASSETS.mkdir(parents=True, exist_ok=True); SUMMARY.parent.mkdir(parents=True, exist_ok=True)
-    sensors = [column for column in frame.columns if column.startswith("xmeas_") or column.startswith("xmv_")]
-    stats = frame[sensors].describe().T
+    source = pq.ParquetFile(INPUT)
+    columns = source.schema_arrow.names
+    sensors = [column for column in columns if column.startswith("xmeas_") or column.startswith("xmv_")]
+    required = ["faultnumber", "simulationrun", "sample", "dataset_partition", "published_condition", *sensors]
+    totals = {sensor: {"count": 0, "sum": 0.0, "sumsq": 0.0, "min": np.inf, "max": -np.inf, "nulls": 0} for sensor in sensors}
+    balance: dict[int, int] = {}
+    correlation_samples: list[pd.DataFrame] = []
+    time_series: list[pd.DataFrame] = []
+    total_rows = 0
+
+    # The full release has 15M+ rows. Stream it so EDA remains reproducible on a
+    # normal development machine instead of attempting a multi-gigabyte RAM load.
+    for batch in source.iter_batches(batch_size=20_000, columns=required):
+        frame = batch.to_pandas()
+        total_rows += len(frame)
+        for fault, count in frame["faultnumber"].value_counts().items():
+            balance[int(fault)] = balance.get(int(fault), 0) + int(count)
+        for sensor in sensors:
+            values = frame[sensor].to_numpy(dtype=float, copy=False)
+            valid = values[~np.isnan(values)]
+            accumulator = totals[sensor]
+            accumulator["nulls"] += len(values) - len(valid)
+            accumulator["count"] += len(valid)
+            if len(valid):
+                accumulator["sum"] += float(valid.sum())
+                accumulator["sumsq"] += float(np.square(valid).sum())
+                accumulator["min"] = min(accumulator["min"], float(valid.min()))
+                accumulator["max"] = max(accumulator["max"], float(valid.max()))
+        step = max(1, len(frame) // 75)
+        correlation_samples.append(frame.loc[::step, sensors].head(75))
+        selected_run = frame.loc[
+            (frame["dataset_partition"] == "training")
+            & (frame["published_condition"] == "fault_free")
+            & (frame["simulationrun"] == 1),
+            ["sample", *sensors[:3]],
+        ]
+        if not selected_run.empty:
+            time_series.append(selected_run)
+
+    statistics = {}
+    for sensor, accumulator in totals.items():
+        count = accumulator["count"]
+        mean = accumulator["sum"] / count if count else np.nan
+        variance = max(0.0, (accumulator["sumsq"] - count * mean**2) / (count - 1)) if count > 1 else np.nan
+        statistics[sensor] = {"count": count, "mean": mean, "std": np.sqrt(variance), "min": accumulator["min"], "max": accumulator["max"]}
+    stats = pd.DataFrame.from_dict(statistics, orient="index")
     stats.to_csv(ASSETS / "tep_summary_statistics.csv")
-    balance = frame.groupby("faultnumber").size().sort_index()
-    balance.to_csv(ASSETS / "tep_fault_balance.csv", header=["row_count"])
-    sample = frame.sort_values(["simulationrun", "sample"]).groupby("simulationrun", group_keys=False).head(500)
+    fault_balance = pd.Series(balance, name="row_count").sort_index()
+    fault_balance.to_csv(ASSETS / "tep_fault_balance.csv", header=["row_count"])
+    sample = pd.concat(time_series, ignore_index=True).sort_values("sample").drop_duplicates("sample").head(500)
     selected = sensors[:3]
     fig, axes = plt.subplots(len(selected), 1, figsize=(11, 7), sharex=True)
     for axis, feature in zip(axes, selected): axis.plot(sample["sample"], sample[feature], lw=.8); axis.set_ylabel(feature)
     axes[-1].set_xlabel("Published sample index"); fig.tight_layout(); fig.savefig(ASSETS / "tep_time_series_sample.png", dpi=150); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(9, 6)); sns.heatmap(frame[sensors].sample(min(50_000, len(frame)), random_state=42).corr(), cmap="vlag", center=0, ax=ax); fig.tight_layout(); fig.savefig(ASSETS / "tep_correlation.png", dpi=150); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(11, 4)); balance.plot.bar(ax=ax, color="#d56a3a"); ax.set_xlabel("Published fault number"); ax.set_ylabel("Rows"); fig.tight_layout(); fig.savefig(ASSETS / "tep_fault_balance.png", dpi=150); plt.close(fig)
-    fault_free = int(balance.get(0, 0)); nonzero = len(frame) - fault_free
+    correlation_frame = pd.concat(correlation_samples, ignore_index=True).head(50_000)
+    fig, ax = plt.subplots(figsize=(9, 6)); sns.heatmap(correlation_frame.corr(), cmap="vlag", center=0, ax=ax); fig.tight_layout(); fig.savefig(ASSETS / "tep_correlation.png", dpi=150); plt.close(fig)
+    fig, ax = plt.subplots(figsize=(11, 4)); fault_balance.plot.bar(ax=ax, color="#d56a3a"); ax.set_xlabel("Published fault number"); ax.set_ylabel("Rows"); fig.tight_layout(); fig.savefig(ASSETS / "tep_fault_balance.png", dpi=150); plt.close(fig)
+    fault_free = int(fault_balance.get(0, 0)); nonzero = total_rows - fault_free
     SUMMARY.write_text("# TEP EDA summary\n\n"
         "Generated by `py -m ml.eda.tep_eda` from the local processed Harvard Dataverse v1.0 Parquet file. TEP is a process simulation, not operational plant telemetry.\n\n"
-        f"* Rows processed: {len(frame):,}; sensor columns: {len(sensors)}; sensor null cells: {int(frame[sensors].isna().sum().sum()):,}.\n"
-        f"* Published `faultnumber=0` rows: {fault_free:,}; non-zero fault-number rows: {nonzero:,}; distinct fault numbers: {balance.index.nunique():,}.\n"
+        f"* Rows processed: {total_rows:,}; sensor columns: {len(sensors)}; sensor null cells: {sum(item['nulls'] for item in totals.values()):,}.\n"
+        f"* Published `faultnumber=0` rows: {fault_free:,}; non-zero fault-number rows: {nonzero:,}; distinct fault numbers: {fault_balance.index.nunique():,}.\n"
         "* The time-series figure uses the published sample index and one deterministic run sample; it does not infer a physical sampling interval.\n"
-        "* Complete computed statistics, fault counts, and figures are in `docs/eda_assets/`. Visual relationships are descriptive only and are not a trained fault model.\n", encoding="utf-8")
+        "* Counts and five-number basic statistics (count, mean, standard deviation, minimum, maximum) are exact streaming calculations. The correlation uses a deterministic 50,000-row streaming sample. Visual relationships are descriptive only and are not a trained fault model.\n", encoding="utf-8")
     print(f"Wrote TEP EDA assets and {SUMMARY}")
 
 

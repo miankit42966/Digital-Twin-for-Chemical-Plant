@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ml.ingestion.common import REPO_ROOT, write_manifest
+from ml.ingestion.common import REPO_ROOT, atomic_output, write_manifest
 
 VERSION = "uci-601"
 RAW = REPO_ROOT / "data" / "raw" / "ai4i" / "ai4i2020.csv"
@@ -26,12 +26,13 @@ def main() -> None:
     for label in ["Machine failure", "TWF", "HDF", "PWF", "OSF", "RNF"]:
         if set(frame[label].unique()) - {0, 1}:
             raise ValueError(f"{label} is not a binary indicator.")
-    if not frame["UDI"].is_monotonic_increasing or frame["UDI"].nunique() != len(frame):
-        raise ValueError("UDI must be a unique increasing row identifier.")
+    if frame["UDI"].tolist() != list(range(1, 10_001)):
+        raise ValueError("UDI must be exactly 1 through 10000 in source order.")
     # Lossless name normalization supports stable feature references in later phases.
     processed = frame.rename(columns={column: column.lower().replace(" ", "_").replace("[", "").replace("]", "").replace("/", "_") for column in frame.columns})
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    processed.to_parquet(OUTPUT / "ai4i.parquet", index=False)
+    with atomic_output(OUTPUT / "ai4i.parquet") as temporary:
+        processed.to_parquet(temporary, index=False)
     write_manifest(OUTPUT, [RAW], len(processed), processed.columns.tolist(), "ml.ingestion.ingest_ai4i")
     print(f"Wrote {len(processed)} rows to {OUTPUT}")
 

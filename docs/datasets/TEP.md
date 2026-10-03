@@ -9,7 +9,9 @@
 
 ## Contents and labels
 
-This is a **simulation dataset**, not measurements from an operating chemical plant. The published RData tables expose 41 measured process variables (`xmeas_1`–`xmeas_41`) and 11 manipulated variables (`xmv_1`–`xmv_11`), plus fault/run/sample identifiers. `faultNumber=0` denotes the published fault-free condition; non-zero fault numbers identify the injected simulation fault scenario. The processor preserves the original sample index; this repository does not state a physical sampling interval unless it is verified from the downloaded release or a cited source.
+This is a **simulation dataset**, not measurements from an operating chemical plant. The published RData tables expose 41 measured process variables (`xmeas_1`–`xmeas_41`) and 11 manipulated variables (`xmv_1`–`xmv_11`), plus fault/run/sample identifiers. `faultNumber=0` denotes the fault-free condition; faults 1–20 identify injected scenarios. There are 500 runs per fault/partition, 500 samples per training run and 960 per testing run: 15,330,000 rows and 21,000 complete trajectories.
+
+The processor preserves the source sample index. The dashboard uses the documented **three simulated minutes** between process measurements, not physical plant timestamps: [simulator measurement documentation](https://github.com/jkitchin/tennessee-eastman-profbraatz/blob/master/docs/api.md). UI playback speed does not change that cadence. Reactor pressure is XMEAS(7) in kPa gauge, converted by division by 100 to bar(g); reactor temperature and level are XMEAS(9) and XMEAS(8). Separator and stripper mappings are explicit in `backend/app/services/tep_dataset.py`.
 
 ## Local acquisition and limitations
 

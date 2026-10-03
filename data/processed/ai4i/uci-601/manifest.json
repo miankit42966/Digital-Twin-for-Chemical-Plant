@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "processing_timestamp_utc": "2026-09-07T08:06:21.591378+00:00",
+  "processing_timestamp_utc": "2026-10-01T08:52:28.167103+00:00",
   "script": "ml.ingestion.ingest_ai4i",
   "source_files": [
     {

@@ -6,8 +6,11 @@ from pathlib import Path
 
 import pandas as pd
 import pyreadr
+import pyarrow as pa
+import pyarrow.parquet as pq
+import numpy as np
 
-from ml.ingestion.common import REPO_ROOT, write_manifest
+from ml.ingestion.common import REPO_ROOT, atomic_output, write_manifest
 
 VERSION = "harvard-dvn-6c3jr1-v1.0"
 RAW_DIR = REPO_ROOT / "data" / "raw" / "tep"
@@ -24,16 +27,32 @@ def load_one(path: Path) -> pd.DataFrame:
     frames = [value for value in objects.values() if isinstance(value, pd.DataFrame)]
     if len(frames) != 1:
         raise ValueError(f"{path.name}: expected one tabular R object; found {len(frames)}")
-    frame = frames[0].copy()
+    frame = frames[0]
     frame.columns = [normalized(str(column)) for column in frame.columns]
     sensor_columns = [column for column in frame.columns if column.startswith("xmeas_") or column.startswith("xmv_")]
-    if len(sensor_columns) != 52:
+    expected_sensors = {f"xmeas_{i}" for i in range(1, 42)} | {f"xmv_{i}" for i in range(1, 12)}
+    if set(sensor_columns) != expected_sensors:
         raise ValueError(f"{path.name}: expected 41 xmeas + 11 xmv columns (52); found {len(sensor_columns)}")
     for required in ("faultnumber", "simulationrun", "sample"):
         if required not in frame.columns:
             raise ValueError(f"{path.name}: missing required TEP field {required!r}; got {frame.columns.tolist()}")
-    if frame[sensor_columns].isna().any().any():
-        raise ValueError(f"{path.name}: sensor nulls found; raw data was not altered.")
+    for column in sensor_columns:
+        if not np.isfinite(frame[column].to_numpy()).all():
+            raise ValueError(f"{path.name}: non-finite sensor values; raw data was not altered.")
+    samples = 500 if "Training" in path.name else 960
+    faults = [0] if "FaultFree" in path.name else list(range(1, 21))
+    if len(frame) != len(faults) * 500 * samples:
+        raise ValueError(f"{path.name}: unexpected published row count")
+    identifiers = frame[["faultnumber", "simulationrun", "sample"]]
+    if identifiers.isna().any().any() or not (identifiers == identifiers.astype('int64')).all().all():
+        raise ValueError(f"{path.name}: invalid fractional/null identifiers")
+    if not frame.faultnumber.isin(faults).all() or not frame.simulationrun.between(1, 500).all() or not frame['sample'].between(1, samples).all():
+        raise ValueError(f"{path.name}: out-of-range identifiers")
+    if identifiers.duplicated().any():
+        raise ValueError(f"{path.name}: duplicate trajectory sample")
+    counts = frame.groupby(['faultnumber', 'simulationrun'], sort=False).size()
+    if len(counts) != len(faults) * 500 or not (counts == samples).all():
+        raise ValueError(f"{path.name}: incomplete trajectory")
     return frame
 
 
@@ -42,19 +61,29 @@ def main() -> None:
     missing = [str(path) for path in paths if not path.exists()]
     if missing:
         raise FileNotFoundError("Missing TEP source file(s): " + ", ".join(missing) + ". Run: py -m ml.ingestion.fetch_tep")
-    tables: list[pd.DataFrame] = []
-    for path in paths:
-        frame = load_one(path)
-        frame["dataset_partition"] = "training" if "Training" in path.name else "testing"
-        frame["published_condition"] = "fault_free" if "FaultFree" in path.name else "faulty"
-        tables.append(frame)
-    merged = pd.concat(tables, ignore_index=True)
-    if (merged["faultnumber"] < 0).any() or (merged["simulationrun"] < 1).any() or (merged["sample"] < 1).any():
-        raise ValueError("TEP identifiers include out-of-range values.")
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    merged.to_parquet(OUTPUT / "tep.parquet", index=False)
-    write_manifest(OUTPUT, paths, len(merged), merged.columns.tolist(), "ml.ingestion.ingest_tep")
-    print(f"Wrote {len(merged)} rows to {OUTPUT}")
+    row_count = 0
+    columns = []
+    with atomic_output(OUTPUT / "tep.parquet") as temporary:
+        writer = None
+        try:
+            # Process one R table at a time; don't concatenate all 15.33M rows.
+            for path in paths:
+                frame = load_one(path)
+                frame["dataset_partition"] = "training" if "Training" in path.name else "testing"
+                frame["published_condition"] = "fault_free" if "FaultFree" in path.name else "faulty"
+                table = pa.Table.from_pandas(frame, preserve_index=False)
+                if writer is None:
+                    columns = table.column_names
+                    writer = pq.ParquetWriter(temporary, table.schema)
+                writer.write_table(table, row_group_size=500_000)
+                row_count += len(frame)
+                del table, frame
+        finally:
+            if writer is not None:
+                writer.close()
+    write_manifest(OUTPUT, paths, row_count, columns, "ml.ingestion.ingest_tep")
+    print(f"Wrote {row_count} rows to {OUTPUT}")
 
 
 if __name__ == "__main__":

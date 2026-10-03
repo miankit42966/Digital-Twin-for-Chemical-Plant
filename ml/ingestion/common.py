@@ -2,11 +2,28 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@contextmanager
+def atomic_output(target: Path):
+    """Replace only after successful validation; retain the previous good file."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=target.name + ".", suffix=".partial", dir=target.parent)
+    os.close(descriptor)
+    temporary = Path(name)
+    try:
+        yield temporary
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def sha256(path: Path) -> str:
@@ -28,5 +45,6 @@ def write_manifest(output_dir: Path, source_files: list[Path], row_count: int, c
         "columns": columns,
         "transformations": "Schema validation and lossless column-name normalization only; no rows are imputed, dropped, sampled, or synthetically generated.",
     }
-    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with atomic_output(output_dir / "manifest.json") as temporary:
+        temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
