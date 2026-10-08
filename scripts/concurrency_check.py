@@ -20,11 +20,13 @@ async def main():
         async def request(index):
             async with limit:
                 run, sample, udi = 401 + index % 2, 170 + index % 20, index + 1
-                kind = index % 4
+                kind = index % 6
                 path = (
                     f'/api/v1/tep/dataset/frame?run={run}&sample={sample}',
                     f'/api/v1/report?source=tep&run={run}&sample={sample}',
                     f'/api/v1/report?source=ai4i&udi={udi}',
+                    f'/api/v1/tep/rtf/frame?case=case1&run={1 + index % 3}&sample={21 + index % 20}&points=30',
+                    f'/api/v1/prognosis-lab/frame?run={1 + index % 3}&sample={21 + index % 20}&points=30',
                     '/health',
                 )[kind]
                 started = time.monotonic()
@@ -41,6 +43,18 @@ async def main():
                 elif kind == 2:
                     assert payload['source_kind'] == 'AI4I_DATASET' and payload['record']['udi'] == udi
                     assert 'state' not in payload
+                elif kind == 3:
+                    state, history = payload['state'], payload['history']
+                    assert state['source_kind'] == history['source_kind'] == 'TEP_RTF'
+                    assert state['simulation_id'] == history['simulation_id'] == 1 + index % 3
+                    assert state['sample_index'] == history['end_sample'] == 21 + index % 20
+                    assert state['prognosis']['highlight_unit_id'] is None
+                elif kind == 4:
+                    state, history = payload['state'], payload['history']
+                    assert state['source_kind'] == history['source_kind'] == 'SYNTHETIC_EQUIPMENT_PROGNOSIS'
+                    assert state['run_id'] == history['run_id'] == 1 + index % 3
+                    assert state['sample_index'] == history['end_sample'] == 21 + index % 20
+                    assert state['observed_outcome'] is None
                 else:
                     assert payload['status'] == 'ok'
         await asyncio.gather(*(request(index) for index in range(128)))
@@ -81,7 +95,8 @@ async def main():
     print(json.dumps({'status': 'passed', 'http_requests': 128, 'http_concurrency': 16,
         'websocket_clients': 8, 'abrupt_resets': 8, 'latency_ms': {
             'median': round(statistics.median(ordered), 1), 'p95': round(ordered[int(.95 * (len(ordered) - 1))], 1)},
-        'checks': ['atomic source/sample identity', 'measured/chart agreement', 'models ready',
+        'checks': ['atomic source/sample identity', 'measured/chart agreement', 'models ready', 'RTF run/sample isolation',
+            'synthetic prognosis run/sample isolation',
             'separate stream cursors', 'ordered final samples', 'normal end closure', 'health after peer resets']}))
 
 

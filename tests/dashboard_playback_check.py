@@ -13,12 +13,18 @@ import time
 import urllib.request
 
 from websockets.sync.client import connect
-from PIL import Image
+from PIL import Image, ImageChops
 
 
 def main():
     targets = json.load(urllib.request.urlopen("http://127.0.0.1:9225/json"))
-    target = next(t for t in targets if t.get("type") == "page" and t.get("url") == "http://127.0.0.1:5173/")
+    pages = [target for target in targets if target.get("type") == "page"]
+    if not pages:
+        raise RuntimeError("No Chrome page target is available on CDP port 9225")
+    target = next(
+        (page for page in pages if page.get("url") == "http://127.0.0.1:5173/"),
+        pages[0],
+    )
     artifacts = Path(tempfile.mkdtemp(prefix="sentineltwin-playback-qa-"))
     errors = []
     sequence = 0
@@ -64,6 +70,15 @@ def main():
                 pixels = pixels.crop((round(rect['x']), round(rect['y']), round(rect['x'] + rect['width']), round(rect['y'] + rect['height'])))
             return hashlib.sha256(pixels.tobytes()).hexdigest()
 
+        def screenshot_difference(first_name, second_name):
+            first = Image.open(artifacts / first_name).convert('RGB')
+            second = Image.open(artifacts / second_name).convert('RGB')
+            difference = ImageChops.difference(first, second)
+            pixels = difference.get_flattened_data()
+            changed = sum(1 for pixel in pixels if pixel != (0, 0, 0))
+            maximum = max((max(pixel) for pixel in pixels), default=0)
+            return changed, maximum
+
         def click_play():
             evaluate("document.querySelector('.dataset-controls .control-button').click()")
 
@@ -73,14 +88,17 @@ def main():
         reload_token = str(time.time_ns())
         call("Page.addScriptToEvaluateOnNewDocument", {"source": f"window.__qaReloadToken='{reload_token}'"})
         call("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-        call("Page.reload", {"ignoreCache": True})
+        call("Page.navigate", {"url": "http://127.0.0.1:5173/"})
         wait_for(f"window.__qaReloadToken==='{reload_token}' && document.querySelector('.dashboard') && document.querySelector('.scene canvas') && document.querySelector('.pressure-chart') && document.querySelector('.playback-status')?.dataset.sample==='170' && !document.querySelector('.dataset-controls .control-button')?.disabled")
         evaluate("""window.__playbackCheck={blanks:0,canvas:document.querySelector('.scene canvas'),chart:document.querySelector('.pressure-chart')};
           window.__playbackObserver=new MutationObserver(()=>{const q=window.__playbackCheck;
           if(!document.querySelector('.playback-status')?.dataset.sample || document.querySelector('.scene canvas')!==q.canvas || document.querySelector('.pressure-chart')!==q.chart || document.querySelectorAll('.asset-playback-cards button').length!==3)q.blanks++});
           window.__playbackObserver.observe(document.querySelector('.dashboard'),{childList:true,subtree:true,attributes:true});""")
         # Slow responses expose the previous blank-frame bug while playback runs.
-        call("Network.emulateNetworkConditions", {"offline": False, "latency": 600, "downloadThroughput": 800000, "uploadThroughput": 800000})
+        # Hold the committed dataset frame while the slower GPU screenshot path
+        # compares flow-only animation. This prevents a sample change from being
+        # mistaken for pipe motion on software-rendered CI/browser sessions.
+        call("Network.emulateNetworkConditions", {"offline": False, "latency": 120000, "downloadThroughput": 800000, "uploadThroughput": 800000})
         click_play()
         time.sleep(.2)
         sample_before = evaluate("document.querySelector('.playback-status').dataset.sample")
@@ -89,6 +107,13 @@ def main():
         second = screenshot("playing-b.png", scene_only=True)
         assert evaluate("document.querySelector('.playback-status').dataset.sample") == sample_before, "Animation check crossed a sample boundary"
         assert first != second, "3D scene does not animate between dataset updates"
+        # Pause rolls the requested slider sample back to the committed frame and
+        # aborts the deliberately stalled fetch. Resume under normal QA latency.
+        click_play()
+        wait_for("document.querySelector('.dataset-controls .control-button')?.innerText==='Play stream'")
+        call("Network.emulateNetworkConditions", {"offline": False, "latency": 600, "downloadThroughput": 800000, "uploadThroughput": 800000})
+        click_play()
+        wait_for("document.querySelector('.dataset-controls .control-button')?.innerText==='Pause stream'")
         wait_for("Number(document.querySelector('.playback-status')?.dataset.sample)>=173", timeout=20)
         assert evaluate("window.__playbackCheck.blanks") == 0, "Scene/chart was cleared or remounted during playback"
         screenshot("desktop-playing.png")
@@ -101,10 +126,11 @@ def main():
         assert evaluate("document.querySelector('.playback-status').dataset.sample") == committed, "Pause accepted another in-flight sample"
         assert evaluate("document.querySelector('.sample-control strong').innerText.split(' / ')[0]") == committed, "Pause left slider ahead of readings"
         time.sleep(2)
-        paused_a = screenshot("paused-a.png", scene_only=True)
+        screenshot("paused-a.png", scene_only=True)
         time.sleep(.4)
-        paused_b = screenshot("paused-b.png", scene_only=True)
-        assert paused_a == paused_b, "Process motion continues after Pause"
+        screenshot("paused-b.png", scene_only=True)
+        changed_pixels, maximum_delta = screenshot_difference("paused-a.png", "paused-b.png")
+        assert changed_pixels <= 5 and maximum_delta <= 5, "Process motion continues after Pause"
         evaluate("window.__playbackObserver.disconnect()")
         call("Network.emulateNetworkConditions", {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1})
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app.main import app
-from app.services import ai4i_dataset, tep_dataset, tep_models
+from app.services import ai4i_dataset, tep_dataset, tep_models, tep_rtf
 from app.services.cache import singleflight_cache
 
 
@@ -84,6 +84,22 @@ class ApiConcurrencyTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=8) as pool:
             outputs = list(pool.map(lambda _: tep_models.infer(rows, 170)[:2], range(32)))
         self.assertTrue(all(output == outputs[0] for output in outputs))
+
+    @unittest.skipUnless(tep_rtf.available(), 'local TEP RTF dataset required')
+    def test_parallel_rtf_frames_keep_run_and_sample_identity(self):
+        with TestClient(app) as client:
+            def request(index):
+                run, sample = 1 + index % 3, 21 + index
+                response = client.get(f'/api/v1/tep/rtf/frame?case=case1&run={run}&sample={sample}&points=25')
+                self.assertEqual(response.status_code, 200)
+                frame = response.json()
+                self.assertEqual((frame['state']['simulation_id'], frame['state']['sample_index']), (run, sample))
+                self.assertEqual((frame['history']['simulation_id'], frame['history']['end_sample']), (run, sample))
+                self.assertIsNone(frame['state']['prognosis']['highlight_unit_id'])
+                return frame['state']['prognosis']['remaining_minutes']
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                values = list(pool.map(request, range(24)))
+        self.assertTrue(all(value is not None for value in values))
 
 
 if __name__ == '__main__':

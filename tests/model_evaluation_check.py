@@ -59,7 +59,7 @@ def main():
         links = evaluate("Array.from(document.querySelectorAll('.model-links a')).map(a=>a.getAttribute('href'))")
         assert links == ['/?evaluation=tep-detector', '/?evaluation=tep-pressure-20m']
         for origin in ('http://127.0.0.1:5173', 'http://127.0.0.1:8000'):
-            for kind, values in (('tep-detector', ['99.68%', '54.63%', '0.953', '0.872']), ('tep-pressure-20m', ['5.25 kPa', '8.57 kPa', '0.988', '16.06 kPa'])):
+            for kind, values in (('tep-detector', ['99.68%', '54.63%', '0.953', '0.872']), ('tep-pressure-20m', ['5.25 kPa', '8.57 kPa', '0.988', '16.00 kPa'])):
                 navigate(origin + '/?evaluation=' + kind)
                 wait("document.querySelectorAll('.evaluation-metrics strong').length===4")
                 assert evaluate("Array.from(document.querySelectorAll('.evaluation-metrics strong')).map(x=>x.innerText)") == values
@@ -67,7 +67,7 @@ def main():
                 assert evaluate("document.querySelector('.evaluation-limitations').innerText.includes('No live plant connection')")
                 assert evaluate("fetch('/api/v1/models/' + document.querySelector('.evaluation-page').dataset.model).then(async r=>r.headers.get('content-type').includes('application/json') && !!(await r.json()).model_name)")
                 if kind == 'tep-detector':
-                    assert evaluate("document.querySelector('.evaluation-matrix').innerText.includes('7,259')")
+                    assert evaluate("Array.from(document.querySelectorAll('.evaluation-matrix')).some(table=>table.innerText.includes('7,259'))")
                 screenshot(kind + '-' + origin.rsplit(':', 1)[-1] + '.png')
         # Mobile layout and long provenance/raw JSON cannot widen the document.
         call('Emulation.setDeviceMetricsOverride', {'width': 390, 'height': 844, 'deviceScaleFactor': 1, 'mobile': True})

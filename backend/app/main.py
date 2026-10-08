@@ -1,14 +1,13 @@
 import asyncio
-import json
 from pathlib import Path
 from typing import Literal
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.schemas import DatasetFrame, Incident, PlantState, ReplaySeries
+from app.schemas import DatasetFrame, Incident, LabFrame, PlantState, ReplaySeries, RtfFrame
 from app.services.baseline import state as baseline_state
-from app.services import ai4i_dataset, tep_dataset, tep_models, tep_replay
+from app.services import ai4i_dataset, equipment_prognosis, tep_dataset, tep_models, tep_replay, tep_rtf
 
 app = FastAPI(title="SentinelTwin API", version="0.4.0", description="Dataset-driven Tennessee Eastman Process and AI4I research dashboard. Not connected to a physical plant.")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173"], allow_credentials=False,
@@ -18,8 +17,70 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http
 @app.get("/health")
 def health() -> dict[str, str]:
     models = tep_models.availability()
-    ready = tep_dataset.available() and ai4i_dataset.available() and all(value == "ready" for value in models.values())
-    return {"status": "ok" if ready else "degraded", "data_mode": "TEP_DATASET", "tep_dataset": "available" if tep_dataset.available() else "unavailable", "ai4i_dataset": "available" if ai4i_dataset.available() else "unavailable", "tep_replay": "available" if tep_replay.available() else "unavailable", "tep_detector": models["detector"], "tep_pressure_forecast": models["pressure"]}
+    datasets = {"tep": tep_dataset.available(), "ai4i": ai4i_dataset.available(), "rtf": tep_rtf.available(),
+                "prognosis_lab": equipment_prognosis.available()}
+    rtf_model = tep_rtf.model_availability()
+    lab_model = equipment_prognosis.model_availability()
+    ready = all(datasets.values()) and all(value == "ready" for value in models.values()) and rtf_model == "ready" and lab_model == "ready"
+    return {"status": "ok" if ready else "degraded", "data_mode": "TEP_DATASET",
+            "tep_dataset": "available" if datasets["tep"] else "unavailable",
+            "ai4i_dataset": "available" if datasets["ai4i"] else "unavailable",
+            "tep_replay": "available" if tep_replay.available() else "unavailable",
+            "tep_detector": models["detector"], "tep_pressure_forecast": models["pressure"],
+            "tep_rtf_dataset": "available" if datasets["rtf"] else "unavailable",
+            "tep_rtf_prognosis": rtf_model,
+            "equipment_prognosis_dataset": "available" if datasets["prognosis_lab"] else "unavailable",
+            "equipment_prognosis_model": lab_model}
+
+
+@app.get("/api/v1/prognosis-lab/options")
+def prognosis_lab_options() -> dict:
+    try:
+        return equipment_prognosis.options()
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=f"Equipment prognosis dataset unavailable: {exc}") from exc
+
+
+@app.get("/api/v1/prognosis-lab/frame", response_model=LabFrame)
+def prognosis_lab_frame(run: int = 1, sample: int = 1, points: int = 90) -> LabFrame:
+    try:
+        return equipment_prognosis.frame(run, sample, points)
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/models/equipment-prognosis")
+def equipment_prognosis_card() -> dict:
+    if equipment_prognosis.model_availability() != "ready":
+        raise HTTPException(status_code=503, detail="Equipment prognosis model is not ready")
+    return equipment_prognosis.model()[1]
+
+
+@app.get("/api/v1/tep/rtf/options")
+def tep_rtf_options() -> dict:
+    try:
+        return tep_rtf.options()
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=f"RTF dataset unavailable: {exc}") from exc
+
+
+@app.get("/api/v1/tep/rtf/frame", response_model=RtfFrame)
+def tep_rtf_frame(case: str = "case1", run: int = 1, sample: int = 1, points: int = 90) -> RtfFrame:
+    try:
+        return tep_rtf.frame(case, run, sample, points)
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/models/tep-rtf-prognosis")
+def tep_rtf_card() -> dict:
+    if tep_rtf.model_availability() != "ready":
+        raise HTTPException(status_code=503, detail="RTF prognosis model is not ready")
+    return tep_rtf.model()[1]
 
 
 @app.get("/api/v1/tep/dataset/frame", response_model=DatasetFrame)
@@ -131,23 +192,17 @@ def tep_replay_series(end_sample: int = 170, points: int = 90) -> ReplaySeries:
 
 @app.get("/api/v1/models/tep-detector")
 def tep_detector_card() -> dict:
-    card = Path(__file__).resolve().parents[2] / "docs/models/TEP_fault_detector.json"
-    if not card.exists():
-        raise HTTPException(status_code=503, detail="TEP detector model card is not available")
     try:
-        return json.loads(card.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        return tep_models.evaluation_card("detector")
+    except (OSError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=503, detail="Detector evaluation card could not be read") from exc
 
 
 @app.get("/api/v1/models/tep-pressure-20m")
 def tep_pressure_card() -> dict:
-    card = Path(__file__).resolve().parents[2] / "docs/models/TEP_pressure_20m.json"
-    if not card.exists():
-        raise HTTPException(status_code=503, detail="TEP pressure model card is not available")
     try:
-        return json.loads(card.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        return tep_models.evaluation_card("pressure")
+    except (OSError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=503, detail="Pressure evaluation card could not be read") from exc
 
 
@@ -157,10 +212,19 @@ def incidents() -> list[Incident]:
 
 
 @app.get("/api/v1/report")
-def report(source: Literal["tep", "ai4i"] = "tep", sample: int = 170, partition: str = "testing", fault: int = 6, run: int = 401, udi: int = 1) -> dict:
+def report(source: Literal["tep", "ai4i", "rtf", "prognosis_lab"] = "tep", sample: int = 170, partition: str = "testing", fault: int = 6, run: int = 401, udi: int = 1, case: str = "case1") -> dict:
     if source == "ai4i":
         frame = ai4i_frame(udi)
         return {"status": "ready", "report_kind": "dataset_snapshot", **frame}
+    if source == "rtf":
+        frame = tep_rtf_frame(case, run, sample, 90)
+        return {"status": "ready", "report_kind": "rtf_snapshot", "source_kind": "TEP_RTF",
+                **frame.model_dump(mode="json"), "model_card": tep_rtf_card() if tep_rtf.model_availability() == "ready" else {"status": "unavailable"}}
+    if source == "prognosis_lab":
+        frame = prognosis_lab_frame(run, sample, 90)
+        return {"status": "ready", "report_kind": "equipment_prognosis_snapshot",
+                **frame.model_dump(mode="json"),
+                "model_card": equipment_prognosis_card() if equipment_prognosis.model_availability() == "ready" else {"status": "unavailable"}}
     frame = tep_dataset_frame(sample, 90, partition, fault, run)
     cards = {}
     for kind, reader in (("detector", tep_detector_card), ("pressure", tep_pressure_card)):

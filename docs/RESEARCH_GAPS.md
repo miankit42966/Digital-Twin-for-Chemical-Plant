@@ -25,8 +25,11 @@ The remaining supplied paper summaries need a separate full-text check before a 
 | Source provenance | Official AI4I and TEP downloads, hashes and local manifests | Implemented |
 | Plant-like visualization | Animated React/Three.js view, clickable 2D route, three-asset inspector, bounded pressure chart and source-separated AI4I explorer | Prototype |
 | Recorded process playback | `/api/v1/tep/dataset/frame` for any published partition/fault/run, synchronized playback and JSON snapshot export; fixed replay retained as legacy | Implemented locally |
-| CPU fault detection | `ml/train_tep_detector.py`, held-out run evaluation and `docs/models/TEP_fault_detector.json` | Research benchmark only |
+| CPU fault detection | `ml/train_tep_detector.py`, held-out run evaluation and `docs/models/TEP_fault_detector.json`; per-fault recall, score-bin calibration evidence, and per-sample median-replacement sensitivity shown in the UI | Research benchmark only; explanations are non-causal |
 | +20-minute reactor pressure | `ml/train_tep_pressure_forecast.py`, held-out run evaluation and `docs/models/TEP_pressure_20m.json` | Simulation regression only; no hazard label |
+| TEP run-to-failure remaining time | Separate official archive, resumable/checksummed ingestion, grouped current-and-past model, API/UI/evaluation report | Estimates time to simulated endpoint only |
+| Next equipment to reach shutdown | UI/API warning path is implemented but terminal-unit label is absent from the published CSV schema | Correctly abstains; no equipment is highlighted |
+| Labelled equipment prognosis lab | 1,200 dynamic-surrogate run families, five units, ten degradation modes, censored controls, past-only grouped models and fail-closed UI highlighting | Implemented as synthetic research evidence only; does not validate official RTF or a physical plant |
 | 20-minute forward failure probability | No valid event-time labels or calibrated forecast model | Not implemented |
 | Leak/over-pressure prediction | No labeled leak outcomes, asset topology ground truth or validated operating limits | Not implemented |
 | Industrial connection and control | No plant sensor interface, writeback, authentication, historian, or independent safety system | Not implemented |
@@ -40,3 +43,9 @@ The remaining supplied paper summaries need a separate full-text check before a 
 5. For any operational pilot, add authenticated ingestion, timestamp and sequence checks, stale-data handling, audit logs, model rollback, latency/availability monitoring, access control and an independent safety review. Keep recommendations advisory until site engineers authorize use.
 
 The published TEP fault is injected at a known simulation sample. That benchmark supports fault-detection research; it does not by itself establish that an event could be anticipated 20 minutes before onset. A 3-minute TEP sample interval is documented in [simulator measurement documentation](https://github.com/jkitchin/tennessee-eastman-profbraatz/blob/master/docs/api.md); replay speed is an application display setting.
+
+## Detector evidence added in this audit
+
+The current held-out card reports 99.68% precision but only 54.63% recall at its 0.5 threshold. Faults 3, 9, 15 and 19 each have less than 2% recall (800 evaluated fault-labeled samples per scenario). This is a serious coverage limitation, not an acceptable safety detector. Its Brier score is 0.179 and equal-width-bin expected calibration error is 15.4 percentage points on a fault-enriched TEP test set; these figures do **not** calibrate the score as a plant failure probability. The dashboard now exposes these results and a one-feature-at-a-time median-replacement sensitivity for each sample. Tree-score spread and feature sensitivity are exploratory diagnostics, not physical causes or uncertainty guarantees.
+
+The two supplied attachments contain paper *summaries*, not complete article text. Therefore this audit can test the claims in those summaries against the project and verify selected bibliographic details, but it cannot claim a line-by-line review of each full paper or declare every research gap solved. Full texts, event-labeled plant data, validated topology and operating limits remain necessary for the corresponding gates above.

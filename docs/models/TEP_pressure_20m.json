@@ -1,9 +1,10 @@
 {
   "model_name": "TEP reactor pressure at +20 simulated minutes",
-  "created_utc": "2026-10-03T07:07:46.573971+00:00",
+  "created_utc": "2026-10-08T03:36:32.849905+00:00",
   "task": "Estimate reactor pressure in kPa gauge at +20 simulated minutes; not an event or hazard probability.",
   "dataset": "Harvard Dataverse doi:10.7910/DVN/6C3JR1 v1.0",
   "dataset_sha256": "215127496960facb5e552ea79c2dfc6f19a31ae21821bfae78d51c0f49ef06cc",
+  "artifact_id": "187c307786664816ba288a0e17e7020a",
   "features": [
     "xmeas_7",
     "xmeas_8",
@@ -17,10 +18,10 @@
   "split": "Training partition runs divisible by 10 up to 400; held-out testing partition runs ending in 1 from 401\u2013500. Rows every 12 samples.",
   "n_train": 34440,
   "n_test": 16590,
-  "mae_kpa_gauge": 5.250685206090611,
-  "rmse_kpa_gauge": 8.569178566599001,
-  "r2": 0.9881578272132423,
-  "p95_absolute_error_kpa_gauge": 16.0561468987795,
+  "mae_kpa_gauge": 5.247591077848942,
+  "rmse_kpa_gauge": 8.57445335769889,
+  "r2": 0.9881432437353941,
+  "p95_absolute_error_kpa_gauge": 16.00123708161943,
   "limitations": [
     "The +20 minute target is interpolated between two future simulation samples, not directly observed at that instant.",
     "A pressure estimate is not a leak, overpressure, or equipment-failure probability.",

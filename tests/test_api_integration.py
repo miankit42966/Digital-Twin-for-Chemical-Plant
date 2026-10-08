@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 import json
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +14,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app.main import app
 from app.schemas import DatasetFrame
-from app.services import tep_dataset, tep_models, ai4i_dataset
+from app.services import tep_dataset, tep_models, ai4i_dataset, tep_rtf
 from ml.train_tep_pressure_forecast import rows_for_run
 from ml.ingestion.common import atomic_output
 from ml.ingestion import ingest_tep
@@ -79,6 +80,19 @@ class AtomicOutputTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'features'):
                     tep_models._load(Path(directory) / 'model', card, ('test',), tep_models.FEATURES)
 
+    def test_model_and_card_must_share_one_training_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            card = Path(directory) / 'card.json'
+            card.write_text(json.dumps({'features': list(tep_models.PRESSURE_FEATURES),
+                                        'dataset_sha256': 'same-data', 'artifact_id': 'card-build'}), encoding='utf-8')
+            bundle = {'features': list(tep_models.PRESSURE_FEATURES), 'dataset_sha256': 'same-data',
+                      'artifact_id': 'model-build',
+                      'estimator': SimpleNamespace(n_features_in_=len(tep_models.PRESSURE_FEATURES))}
+            tep_models._load.cache_clear()
+            with patch.object(tep_models.joblib, 'load', return_value=bundle):
+                with self.assertRaisesRegex(ValueError, 'atomic training artifact'):
+                    tep_models._load(Path(directory) / 'model', card, ('artifact-mismatch',), tep_models.PRESSURE_FEATURES)
+
 
 @unittest.skipUnless(tep_dataset.available() and ai4i_dataset.available(), 'local datasets required')
 class ApiIntegrationTests(unittest.TestCase):
@@ -119,6 +133,7 @@ class ApiIntegrationTests(unittest.TestCase):
                 state = response.json()['state']
                 self.assertEqual(state['model_status'], {'detector': 'missing', 'pressure': 'missing'})
                 self.assertIsNone(state['detector_score'])
+                self.assertIsNone(state['detector_explanation'])
                 self.assertIsNone(state['reactor_pressure_20m_bar_g'])
                 self.assertEqual(len(state['assets']), 3)
             with atomic_output(missing) as temporary:
@@ -127,7 +142,34 @@ class ApiIntegrationTests(unittest.TestCase):
                 state = self.client.get('/api/v1/tep/dataset/frame').json()['state']
                 self.assertEqual(state['model_status']['detector'], 'invalid')
                 self.assertIsNone(state['detector_score'])
+                self.assertIsNone(state['detector_explanation'])
                 self.assertIsNotNone(state['reactor_pressure_20m_bar_g'])
+
+    def test_detector_explanation_is_bounded_non_causal_sensitivity(self):
+        state = self.client.get('/api/v1/tep/dataset/frame?sample=170&fault=6&run=401').json()['state']
+        explanation = state['detector_explanation']
+        self.assertIsNotNone(state['detector_score'])
+        self.assertEqual(explanation['method'], 'one_feature_at_a_time_median_replacement')
+        self.assertGreaterEqual(explanation['ensemble_tree_std'], 0)
+        self.assertLessEqual(len(explanation['top_positive_factors']), 3)
+        self.assertLessEqual(len(explanation['top_negative_factors']), 3)
+        self.assertTrue(all(item['score_delta'] > 0 for item in explanation['top_positive_factors']))
+        self.assertTrue(all(item['score_delta'] < 0 for item in explanation['top_negative_factors']))
+        self.assertIn('non-causal', explanation['disclaimer'])
+        self.assertIn('not calibrated', explanation['disclaimer'])
+        for item in explanation['top_positive_factors'] + explanation['top_negative_factors']:
+            self.assertIn(item['feature'], tep_models.FEATURES)
+
+    def test_detector_card_contains_global_calibration_and_fault_evidence(self):
+        card = self.client.get('/api/v1/models/tep-detector').json()
+        self.assertEqual(len(card['global_feature_importance']), len(tep_models.FEATURES))
+        self.assertAlmostEqual(sum(item['importance'] for item in card['global_feature_importance']), 1, places=6)
+        self.assertGreaterEqual(card['calibration_evidence']['brier_score'], 0)
+        self.assertLessEqual(card['calibration_evidence']['brier_score'], 1)
+        self.assertGreaterEqual(card['calibration_evidence']['expected_calibration_error'], 0)
+        self.assertEqual(len(card['calibration_evidence']['bins']), 10)
+        self.assertEqual(set(card['per_fault_recall']), {str(number) for number in range(1, 21)})
+        self.assertTrue(all(value['support'] > 0 for value in card['per_fault_recall'].values()))
 
     def test_pressure_features_match_training_without_future_leakage(self):
         rows = tep_dataset.trajectory()
@@ -162,6 +204,13 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.get('/health').json()['status'], 'ok')
         for endpoint in ('tep-detector', 'tep-pressure-20m'):
             self.assertEqual(self.client.get('/api/v1/models/' + endpoint).status_code, 200)
+
+    def test_health_includes_run_to_failure_readiness(self):
+        with patch.object(tep_rtf, 'available', return_value=False), patch.object(tep_rtf, 'model_availability', return_value='missing'):
+            health = self.client.get('/health').json()
+        self.assertEqual(health['status'], 'degraded')
+        self.assertEqual(health['tep_rtf_dataset'], 'unavailable')
+        self.assertEqual(health['tep_rtf_prognosis'], 'missing')
 
 
 if __name__ == '__main__':

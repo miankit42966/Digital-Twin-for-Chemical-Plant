@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import ProcessMap from './ProcessMap'
 import PressureChart from './PressureChart'
 import SnapshotReport from './SnapshotReport'
+import RtfExplorer from './RtfExplorer'
+import PrognosisLab from './PrognosisLab'
 import './playback.css'
 import type { Ai4iFrame, Ai4iRecord, Ai4iSummary, DashboardMode, DatasetFrame, PlantState, ReplaySeries, SnapshotData } from './types'
 
@@ -75,6 +77,13 @@ export default function App() {
   const exportRequest = useRef<AbortController | null>(null)
   const [connection, setConnection] = useState('Loading local dataset…')
   const totalSamples = partition === 'testing' ? 960 : 500
+
+  useEffect(() => {
+    if (mode === 'tep') document.title = 'TEP chemical process | SentinelTwin'
+    else if (mode === 'ai4i') document.title = 'AI4I maintenance | SentinelTwin'
+    else if (mode === 'prognosis_lab') document.title = 'Equipment prognosis lab | SentinelTwin'
+    else document.title = 'TEP run-to-failure | SentinelTwin'
+  }, [mode])
 
   function cancelExport() {
     exportRequest.current?.abort('Selection changed')
@@ -185,8 +194,11 @@ export default function App() {
     }
   }
 
+  if (mode === 'rtf') return <RtfExplorer setMode={setMode} />
+  if (mode === 'prognosis_lab') return <PrognosisLab setMode={setMode} />
+
   return <main className="dashboard dataset-dashboard">
-    <header className="site-header"><div className="brand"><span className="brand-mark" aria-hidden="true">◇</span><div><span className="brand-name">SENTINELTWIN</span><span className="brand-sub">PROCESS DATA WORKBENCH</span></div></div><nav className="source-tabs" aria-label="Dataset"><button type="button" className={mode === 'tep' ? 'active' : ''} onClick={() => { setMode('tep'); setError(null); setExportError(null) }}>TEP chemical process</button><button type="button" className={mode === 'ai4i' ? 'active' : ''} onClick={() => { setPlaying(false); setMode('ai4i'); setError(null); setExportError(null) }}>AI4I maintenance</button></nav><span className={`connection-pill ${error ? 'offline' : ''}`}><i />{connectionText}</span></header>
+    <header className="site-header"><div className="brand"><span className="brand-mark" aria-hidden="true">◇</span><div><span className="brand-name">SENTINELTWIN</span><span className="brand-sub">PROCESS DATA WORKBENCH</span></div></div><nav className="source-tabs" aria-label="Dataset"><button type="button" className={mode === 'tep' ? 'active' : ''} onClick={() => { setMode('tep'); setError(null); setExportError(null) }}>TEP chemical process</button><button type="button" className={mode === 'ai4i' ? 'active' : ''} onClick={() => { setPlaying(false); setMode('ai4i'); setError(null); setExportError(null) }}>AI4I maintenance</button><button type="button" onClick={() => { setPlaying(false); setMode('rtf'); setError(null); setExportError(null) }}>TEP run-to-failure</button><button type="button" onClick={() => { setPlaying(false); setMode('prognosis_lab'); setError(null); setExportError(null) }}>Prognosis lab</button></nav><span className={`connection-pill ${error ? 'offline' : ''}`}><i />{connectionText}</span></header>
     <section className="dataset-heading"><div><span className="eyebrow">PUBLISHED BENCHMARK DATA / LOCAL DATASET</span><h1>{mode === 'tep' ? 'Chemical process dataset' : 'Machine maintenance dataset'}</h1><p>{mode === 'tep' ? 'Explore any published TEP run directly from the local Parquet dataset. The process view, chart and model outputs follow your selected sample.' : 'Inspect the published AI4I records separately. This machining dataset does not describe the TEP chemical plant.'}</p></div><div className="dataset-source-indicator"><strong>{mode === 'tep' ? 'TEP v1.0' : 'AI4I 2020'}</strong><span>Dataset-driven · no live plant connection</span></div></section>
 
     <div className="snapshot-actions"><button type="button" className="control-button" onClick={exportSnapshot} disabled={exporting || !!error || (mode === 'tep' ? !actual : ai4iRecord?.udi !== udi)}>{exporting ? 'Preparing snapshot…' : 'Export displayed snapshot'}</button>{exportError && <span role="alert">{exportError}</span>}</div>
@@ -207,6 +219,7 @@ export default function App() {
         <div className="playback-progress" aria-hidden="true"><span key={`${actual?.sample_index}-${playbackSpeed}`} style={{ animationDuration: `${2 / playbackSpeed}s`, animationPlayState: playbackActive && !loading ? 'running' : 'paused' }} /></div>
       </section>
       <section className="summary-strip" aria-label="Selected TEP data"><div><span>TRAJECTORY</span><strong>{partition} · {run}</strong><small>Published fault scenario {fault}</small></div><div><span>SIMULATION TIME</span><strong>{actual?.elapsed_minutes ?? '—'} min</strong><small>3 simulated min per sample</small></div><div><span>CURRENT FAULT SCORE</span><strong>{actual?.detector_score == null ? 'Unavailable' : `${Math.round(actual.detector_score * 100)}%`}</strong><small>Research classifier, not failure probability</small></div><div><span>REACTOR PRESSURE +20 MIN</span><strong>{actual?.reactor_pressure_20m_bar_g == null ? 'Unavailable' : `${actual.reactor_pressure_20m_bar_g.toFixed(2)} bar(g)`}</strong><small>Simulation regression estimate</small></div></section>
+      {actual?.detector_explanation && <section className="explanation-card detector-evidence" aria-label="Current sample detector evidence"><span className="tiny-heading">CURRENT SAMPLE / MODEL SENSITIVITY</span><h2>What changes this fault score?</h2><p>Each feature was replaced separately with its training-set median. A positive delta means the observed value raises the score in this one-feature test; it does not prove a physical cause.</p><div className="detector-factor-groups"><div><strong>Raises score</strong>{actual.detector_explanation.top_positive_factors.length ? <ul>{actual.detector_explanation.top_positive_factors.map(factor => <li key={factor.feature}><code>{factor.feature}</code><span>+{(factor.score_delta * 100).toFixed(1)} points</span></li>)}</ul> : <p>No positive factor in this test.</p>}</div><div><strong>Lowers score</strong>{actual.detector_explanation.top_negative_factors.length ? <ul>{actual.detector_explanation.top_negative_factors.map(factor => <li key={factor.feature}><code>{factor.feature}</code><span>{(factor.score_delta * 100).toFixed(1)} points</span></li>)}</ul> : <p>No negative factor in this test.</p>}</div></div><small>{actual.detector_explanation.disclaimer} Tree-score spread: {(actual.detector_explanation.ensemble_tree_std * 100).toFixed(1)} percentage points; not calibrated uncertainty.</small></section>}
       {actual && Object.entries(actual.model_notices ?? {}).filter(([kind]) => actual.model_status?.[kind] !== 'ready' || (kind === 'pressure' && (actual.sample_index ?? 0) < 4)).map(([kind, notice]) => <p className="model-availability" key={kind}><strong>{kind === 'pressure' ? 'Pressure model' : 'Fault detector'}:</strong> {notice}</p>)}
       <section className="main-layout">
         <div className="visual-card">

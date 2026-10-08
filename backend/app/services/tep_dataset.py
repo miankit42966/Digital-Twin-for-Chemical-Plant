@@ -94,13 +94,13 @@ def _state(rows: tuple[dict, ...], sample: int, partition: str, fault: int, run:
             alarm_level="unassessed", updated_at=now,
         ) for asset_id, name, temperature, pressure, level, flow, unit in mapping
     ]
-    score, forecast, model_status, model_notices = tep_models.infer(rows, sample)
+    score, forecast, model_status, model_notices, explanation = tep_models.infer(rows, sample)
     return PlantState(
         source_kind="TEP_DATASET", source_notice=NOTICE, generated_at=now,
         assets=assets, sample_index=sample, elapsed_minutes=(sample - 1) * 3,
         fault_number=fault, simulation_run=run, dataset_partition=partition,
         total_samples=len(rows), sample_period_minutes=3,
-        detector_score=score, reactor_pressure_20m_bar_g=forecast,
+        detector_score=score, detector_explanation=explanation, reactor_pressure_20m_bar_g=forecast,
         model_status=model_status, model_notices=model_notices,
     )
 

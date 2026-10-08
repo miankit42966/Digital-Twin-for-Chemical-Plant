@@ -17,3 +17,4 @@ data/processed/**/*.parquet
 data/processed/tep/**/replay.json
 models/*.joblib
 .remote-inspect/
+.codex-runtime/

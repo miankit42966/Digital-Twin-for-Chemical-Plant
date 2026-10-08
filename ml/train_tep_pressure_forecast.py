@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import joblib
 import numpy as np
@@ -11,7 +12,7 @@ import pyarrow.parquet as pq
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from ml.ingestion.common import REPO_ROOT, sha256
+from ml.ingestion.common import REPO_ROOT, atomic_output, sha256
 
 SOURCE = REPO_ROOT / "data/processed/tep/harvard-dvn-6c3jr1-v1.0/tep.parquet"
 MODEL = REPO_ROOT / "models/tep_pressure_20m.joblib"
@@ -69,13 +70,16 @@ def main() -> None:
     predicted = model.predict(test_x)
     MODEL.parent.mkdir(parents=True, exist_ok=True)
     CARD.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"estimator": model, "features": FEATURES, "dataset_sha256": sha256(SOURCE)}, MODEL)
+    dataset_sha256 = sha256(SOURCE)
+    artifact_id = uuid4().hex
+    bundle = {"estimator": model, "features": FEATURES, "dataset_sha256": dataset_sha256,
+              "artifact_id": artifact_id}
     card = {
         "model_name": "TEP reactor pressure at +20 simulated minutes",
         "created_utc": datetime.now(UTC).isoformat(),
         "task": "Estimate reactor pressure in kPa gauge at +20 simulated minutes; not an event or hazard probability.",
         "dataset": "Harvard Dataverse doi:10.7910/DVN/6C3JR1 v1.0",
-        "dataset_sha256": sha256(SOURCE), "features": FEATURES,
+        "dataset_sha256": dataset_sha256, "artifact_id": artifact_id, "features": FEATURES,
         "target": "Linear interpolation of xmeas_7 at samples +6 and +7, corresponding to +18 and +21 minutes at the documented three-minute cadence.",
         "split": "Training partition runs divisible by 10 up to 400; held-out testing partition runs ending in 1 from 401–500. Rows every 12 samples.",
         "n_train": int(len(train_y)), "n_test": int(len(test_y)),
@@ -89,7 +93,10 @@ def main() -> None:
             "No plant-specific limits, independent operational validation, uncertainty calibration, or safety certification.",
         ],
     }
-    CARD.write_text(json.dumps(card, indent=2), encoding="utf-8")
+    with atomic_output(MODEL) as temporary:
+        joblib.dump(bundle, temporary)
+    with atomic_output(CARD) as temporary:
+        temporary.write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: card[key] for key in ("n_train", "n_test", "mae_kpa_gauge", "rmse_kpa_gauge", "r2", "p95_absolute_error_kpa_gauge")}, indent=2))
 
 

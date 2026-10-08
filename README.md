@@ -1,6 +1,6 @@
 # SentinelTwin — process data workbench
 
-SentinelTwin is a local research dashboard for two separate published benchmarks. The default TEP view reads the full Tennessee Eastman Process Parquet dataset directly: choose training/testing, fault scenario 0–20, run 1–500, and any sample in that trajectory. The AI4I tab explores the machining predictive-maintenance dataset without pretending it is part of the chemical plant.
+SentinelTwin is a local research dashboard for three separate published benchmark views plus one explicitly synthetic equipment-prognosis lab. The default TEP view reads the Tennessee Eastman Process fault benchmark, the AI4I tab explores machining predictive maintenance, and the TEP run-to-failure tab replays separately ingested shutdown trajectories. Their records and model claims are never merged with the labelled dynamic-surrogate lab.
 
 This is **not a live physical-plant digital twin or a validated safety system**. TEP is published process simulation, AI4I is a synthetic-but-realistic machining benchmark, and the models are research models. No plant actuator is controlled.
 
@@ -37,6 +37,23 @@ The TEP tab needs `data/processed/tep/harvard-dvn-6c3jr1-v1.0/tep.parquet`. The 
 .\.venv\Scripts\python.exe -m ml.ingestion.ingest_ai4i
 ```
 
+The separate TEP run-to-failure view uses the official 2.67 GB archive for DOI `10.57745/1KATN7`. Download is resumable and the published byte count and MD5 are checked before the archive replaces the partial file:
+
+```powershell
+.\.venv\Scripts\python.exe -m ml.ingestion.fetch_tep_rtf
+.\.venv\Scripts\python.exe -m ml.ingestion.ingest_tep_rtf
+.\.venv\Scripts\python.exe -m ml.train_tep_rtf
+```
+
+The ZIP contains eight CSV cases although the source describes six scenarios. `case5_1` and `case7` remain visible for audit but are excluded from training. The CSVs do not contain a verified terminal-equipment label, so the app estimates time to the recorded simulation endpoint but deliberately abstains from naming or highlighting reactor, separator, or stripper. Details are in [TEP run-to-failure dataset notes](docs/datasets/TEP_RTF.md).
+
+The separate Equipment Prognosis Lab generates 1,200 reproducible labelled runs across reactor, condenser, separator, stripper and compressor. It is intentionally not presented as official RTF or real-plant evidence:
+
+```powershell
+.\.venv\Scripts\python.exe -m ml.simulation.generate_equipment_prognosis
+.\.venv\Scripts\python.exe -m ml.train_equipment_prognosis
+```
+
 Model binaries under `models/` are generated locally and ignored by Git. To rebuild them from the ingested TEP data:
 
 ```powershell
@@ -47,12 +64,14 @@ Model binaries under `models/` are generated locally and ignored by Git. To rebu
 ## What the dashboard shows
 
 - The TEP selectors query any published trajectory directly from Parquet. Play advances after each loaded sample's dwell time (2 seconds at 1×, plus request time); 0.5× and 2× speeds are available. Each sample represents three **simulated** minutes. Pause cancels a pending advance, and a run stops at its final sample until Restart is pressed.
-- During playback, 3D flow markers, reactor mixing and the compressor rotor illustrate the route. Vessel fills and gauges interpolate to the dataset's measured levels. Motion speed is visual, not a physical fluid-velocity or RPM measurement. The 2D route also follows Play/Pause.
+- During playback, continuous shader-driven fluid cores, reactor mixing and the compressor rotor illustrate the route. Vessel fills and gauges interpolate to the dataset's measured levels. Motion speed is visual, not a physical fluid-velocity or RPM measurement. The 2D route also follows Play/Pause.
 - Current readings, equipment and pressure history stay visible while the next sample loads. A failed request stops playback with a Retry option; switching trajectory clears the old run's readings.
 - The 3D view and 2D route show process topology. Reactor, separator and stripper values map to published XMEAS variables. Condenser/compressor shapes provide context only; this is not an engineering P&ID.
 - The solid pressure line is measured in the selected simulation run. The dashed point is a single +20 simulated-minute reactor-pressure regression estimate.
 - The fault detector scores the **current** sample's resemblance to an injected fault. It does not predict a future failure or produce a calibrated hazard probability.
 - The AI4I tab shows published rows, failure labels and units separately; it does not merge AI4I records with the TEP plant scene.
+- The TEP run-to-failure tab estimates minutes remaining to the recorded simulated shutdown endpoint from current-and-past measurements. It is not a physical damage prediction. An amber equipment warning is fail-closed and can appear only when a separately verified unit label and validated classifier are available; the current source provides neither, so the UI says unassessed.
+- The Equipment Prognosis Lab uses generated labels to demonstrate within-hour risk, next equipment, failure mode and RUL. Its amber highlight is valid only inside that dynamic-surrogate benchmark and never transfers labels to official RTF data.
 
 The dashboard uses `/api/v1/tep/dataset/frame` for an atomic measured-state/history pair, and `/api/v1/ai4i/frame` for one coherent summary/record/neighbors response. Individual state/series/record endpoints remain available. `/api/v1/plant/state` and `/ws/telemetry` now use the selected TEP dataset, not a dummy plant feed. Synthetic testing is explicitly isolated at `/api/v1/testing/baseline` and `/ws/testing/baseline`; legacy `/api/v1/tep/replay` and `/ws/tep/replay` remain available.
 

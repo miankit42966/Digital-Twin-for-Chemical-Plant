@@ -1,0 +1,301 @@
+{
+  "model_name": "Synthetic equipment prognosis lab",
+  "artifact_id": "44c17f2f640948ebb6d36e8e2a06efa2",
+  "created_utc": "2026-10-08T04:09:00.261323+00:00",
+  "source_kind": "SYNTHETIC_EQUIPMENT_PROGNOSIS",
+  "data_sha256": "4587ae7af618d4ee9ef85de299d8a9ec2af2e4230906236b0c4c4de6cc2edb11",
+  "generator_seed": 20261008,
+  "features": [
+    "now:reactor_temperature_c",
+    "now:reactor_pressure_bar",
+    "now:reactor_level_percent",
+    "now:reactor_feed_flow",
+    "now:condenser_temperature_c",
+    "now:condenser_pressure_bar",
+    "now:condenser_duty_percent",
+    "now:condenser_flow",
+    "now:separator_temperature_c",
+    "now:separator_pressure_bar",
+    "now:separator_level_percent",
+    "now:separator_underflow",
+    "now:stripper_temperature_c",
+    "now:stripper_pressure_bar",
+    "now:stripper_level_percent",
+    "now:stripper_underflow",
+    "now:compressor_temperature_c",
+    "now:compressor_pressure_bar",
+    "now:compressor_efficiency_percent",
+    "now:compressor_work_kw",
+    "delta_1:reactor_temperature_c",
+    "delta_1:reactor_pressure_bar",
+    "delta_1:reactor_level_percent",
+    "delta_1:reactor_feed_flow",
+    "delta_1:condenser_temperature_c",
+    "delta_1:condenser_pressure_bar",
+    "delta_1:condenser_duty_percent",
+    "delta_1:condenser_flow",
+    "delta_1:separator_temperature_c",
+    "delta_1:separator_pressure_bar",
+    "delta_1:separator_level_percent",
+    "delta_1:separator_underflow",
+    "delta_1:stripper_temperature_c",
+    "delta_1:stripper_pressure_bar",
+    "delta_1:stripper_level_percent",
+    "delta_1:stripper_underflow",
+    "delta_1:compressor_temperature_c",
+    "delta_1:compressor_pressure_bar",
+    "delta_1:compressor_efficiency_percent",
+    "delta_1:compressor_work_kw",
+    "delta_20:reactor_temperature_c",
+    "delta_20:reactor_pressure_bar",
+    "delta_20:reactor_level_percent",
+    "delta_20:reactor_feed_flow",
+    "delta_20:condenser_temperature_c",
+    "delta_20:condenser_pressure_bar",
+    "delta_20:condenser_duty_percent",
+    "delta_20:condenser_flow",
+    "delta_20:separator_temperature_c",
+    "delta_20:separator_pressure_bar",
+    "delta_20:separator_level_percent",
+    "delta_20:separator_underflow",
+    "delta_20:stripper_temperature_c",
+    "delta_20:stripper_pressure_bar",
+    "delta_20:stripper_level_percent",
+    "delta_20:stripper_underflow",
+    "delta_20:compressor_temperature_c",
+    "delta_20:compressor_pressure_bar",
+    "delta_20:compressor_efficiency_percent",
+    "delta_20:compressor_work_kw",
+    "mean_20:reactor_temperature_c",
+    "mean_20:reactor_pressure_bar",
+    "mean_20:reactor_level_percent",
+    "mean_20:reactor_feed_flow",
+    "mean_20:condenser_temperature_c",
+    "mean_20:condenser_pressure_bar",
+    "mean_20:condenser_duty_percent",
+    "mean_20:condenser_flow",
+    "mean_20:separator_temperature_c",
+    "mean_20:separator_pressure_bar",
+    "mean_20:separator_level_percent",
+    "mean_20:separator_underflow",
+    "mean_20:stripper_temperature_c",
+    "mean_20:stripper_pressure_bar",
+    "mean_20:stripper_level_percent",
+    "mean_20:stripper_underflow",
+    "mean_20:compressor_temperature_c",
+    "mean_20:compressor_pressure_bar",
+    "mean_20:compressor_efficiency_percent",
+    "mean_20:compressor_work_kw"
+  ],
+  "history_samples": 21,
+  "warning_horizon_minutes": 60,
+  "split": "Deterministic complete-run-family 70/15/15 split; no run crosses partitions.",
+  "run_counts": {
+    "train": 847,
+    "validation": 175,
+    "test": 178
+  },
+  "risk_threshold": 0.485,
+  "unit_thresholds": {
+    "RX-201": 0.35,
+    "CD-201": 0.35,
+    "SP-201": 0.35,
+    "ST-301": 0.35,
+    "CP-201": 0.35
+  },
+  "validation": {
+    "risk_precision": 0.902555910543131,
+    "risk_recall": 0.9792027729636048,
+    "risk_f1": 0.9393183707398172,
+    "censored_false_warning_rate": 0.0,
+    "equipment_confusion_matrix": [
+      [
+        328,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        213,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        223,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        219,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        171
+      ]
+    ],
+    "per_equipment": {
+      "RX-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 328
+      },
+      "CD-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 213
+      },
+      "SP-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 223
+      },
+      "ST-301": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 219
+      },
+      "CP-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 171
+      }
+    },
+    "equipment_macro_precision": 1.0,
+    "equipment_macro_recall": 1.0,
+    "mode_macro_f1": 1.0,
+    "last_hour_rul_mae_minutes": 4.529092046986328,
+    "abstention_rate": 0.0,
+    "samples": 23784
+  },
+  "test": {
+    "risk_precision": 0.9035449299258038,
+    "risk_recall": 0.9699115044247788,
+    "risk_f1": 0.9355527102005975,
+    "censored_false_warning_rate": 0.0,
+    "equipment_confusion_matrix": [
+      [
+        187,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        237,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        237,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        223,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        246
+      ]
+    ],
+    "per_equipment": {
+      "RX-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 187
+      },
+      "CD-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 237
+      },
+      "SP-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 237
+      },
+      "ST-301": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 223
+      },
+      "CP-201": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 246
+      }
+    },
+    "equipment_macro_precision": 1.0,
+    "equipment_macro_recall": 1.0,
+    "mode_macro_f1": 1.0,
+    "last_hour_rul_mae_minutes": 4.331000491642085,
+    "abstention_rate": 0.0,
+    "samples": 24452
+  },
+  "release_gates": {
+    "risk_precision": true,
+    "risk_recall": true,
+    "equipment_macro_precision": true,
+    "equipment_macro_recall": true,
+    "censored_false_warning_rate": true,
+    "last_hour_rul_mae": true,
+    "mode_macro_f1": true
+  },
+  "release_ready": true,
+  "equipment": [
+    "RX-201",
+    "CD-201",
+    "SP-201",
+    "ST-301",
+    "CP-201"
+  ],
+  "failure_modes": {
+    "RX-201": [
+      "cooling_capacity_loss",
+      "agitator_efficiency_loss"
+    ],
+    "CD-201": [
+      "heat_transfer_fouling",
+      "coolant_flow_loss"
+    ],
+    "SP-201": [
+      "outlet_restriction",
+      "level_control_drift"
+    ],
+    "ST-301": [
+      "reboiler_duty_loss",
+      "column_flooding"
+    ],
+    "CP-201": [
+      "compressor_efficiency_loss",
+      "surge_recycle_instability"
+    ]
+  },
+  "limitations": [
+    "Labels are generated by a dynamic surrogate, not observed physical failures.",
+    "This model must not control equipment or issue operational safety alarms."
+  ]
+}
